@@ -26,6 +26,13 @@ resource "ibm_is_vpc_address_prefix" "vpc-ap2" {
   cidr = var.zone2_cidr
 }
 
+resource "ibm_is_vpc_address_prefix" "vpc-ap3" {
+  name = "vpc-ap3"
+  zone = var.zone3
+  vpc  = ibm_is_vpc.vpc1.id
+  cidr = var.zone3_cidr
+}
+
 resource "ibm_is_subnet" "subnet1" {
   name            = "subnet1"
   vpc             = ibm_is_vpc.vpc1.id
@@ -44,6 +51,15 @@ resource "ibm_is_subnet" "subnet2" {
   resource_group = data.ibm_resource_group.rg.id
 }
 
+resource "ibm_is_subnet" "subnet3" {
+  name            = "subnet3"
+  vpc             = ibm_is_vpc.vpc3.id
+  zone            = var.zone3
+  ipv4_cidr_block = var.zone3_cidr
+  depends_on      = [ibm_is_vpc_address_prefix.vpc-ap3]
+  resource_group = data.ibm_resource_group.rg.id
+}
+
 resource "ibm_is_instance" "instance-ces-1" {
   name    = "instance-ces-1"
   image   = var.image
@@ -56,6 +72,11 @@ resource "ibm_is_instance" "instance-ces-1" {
   keys = [data.ibm_is_ssh_key.sshkey1.id]
   user_data = data.template_cloudinit_config.cloud-init-apptier.rendered
   resource_group = data.ibm_resource_group.rg.id
+}
+
+resource "ibm_is_floating_ip" "floatingip1" {
+  name = "fip1"
+  target = "${ibm_is_instance.instance-ces-1.primary_network_interface.0.id}"
 }
 
 resource "ibm_is_instance" "instance-ces-2" {
@@ -73,7 +94,33 @@ resource "ibm_is_instance" "instance-ces-2" {
   resource_group = data.ibm_resource_group.rg.id
 }
 
+resource "ibm_is_floating_ip" "floatingip2" {
+  name = "fip2"
+  target = "${ibm_is_instance.instance-ces-2.primary_network_interface.0.id}"
+}
+
+resource "ibm_is_instance" "instance-ces-3" {
+  name    = "instance-ces-3"
+  image   = var.image
+  profile = var.profile
+  primary_network_interface {
+    subnet = ibm_is_subnet.subnet3.id
+  }
+  vpc  = ibm_is_vpc.vpc1.id
+  zone = var.zone3
+  keys = [data.ibm_is_ssh_key.sshkey1.id]
+  user_data = data.template_cloudinit_config.cloud-init-apptier.rendered
+
+  resource_group = data.ibm_resource_group.rg.id
+}
+
+resource "ibm_is_floating_ip" "floatingip3" {
+  name = "fip3"
+  target = "${ibm_is_instance.instance-ces-3.primary_network_interface.0.id}"
+}
+
 resource "ibm_is_security_group_rule" "sg1_tcp_rule_22" {
+  depends_on = ["ibm_is_floating_ip.floatingip1", "ibm_is_floating_ip.floatingip2", "ibm_is_floating_ip.floatingip3"]
   group     = ibm_is_vpc.vpc1.default_security_group
   direction = "inbound"
   remote    = "0.0.0.0/0"
@@ -84,6 +131,7 @@ resource "ibm_is_security_group_rule" "sg1_tcp_rule_22" {
 }
 
 resource "ibm_is_security_group_rule" "sg1_tcp_rule_80" {
+  depends_on = ["ibm_is_floating_ip.floatingip1", "ibm_is_floating_ip.floatingip2", "ibm_is_floating_ip.floatingip3"]
   group     = ibm_is_vpc.vpc1.default_security_group
   direction = "inbound"
   remote    = "0.0.0.0/0"
@@ -93,4 +141,10 @@ resource "ibm_is_security_group_rule" "sg1_tcp_rule_80" {
   }
 }
 
-
+resource "ibm_is_lb_pool_member" "lb1-pool-member3" {
+  count = 1
+  lb = "${ibm_is_lb.lb1.id}"
+  pool = "${ibm_is_lb_pool.lb1-pool.id}"
+  port = "80"
+  target_address = "${ibm_is_instance.instance-ces-3.primary_network_interface.0.primary_ipv4_address}"
+}
