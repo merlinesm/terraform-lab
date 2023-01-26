@@ -53,7 +53,7 @@ resource "ibm_is_subnet" "subnet2" {
 
 resource "ibm_is_subnet" "subnet3" {
   name            = "subnet3"
-  vpc             = ibm_is_vpc.vpc3.id
+  vpc             = ibm_is_vpc.vpc1.id
   zone            = var.zone3
   ipv4_cidr_block = var.zone3_cidr
   depends_on      = [ibm_is_vpc_address_prefix.vpc-ap3]
